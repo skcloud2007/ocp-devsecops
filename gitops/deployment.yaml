@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-ex
+  labels:
+    app: nodejs-ex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodejs-ex
+  template:
+    metadata:
+      labels:
+        app: nodejs-ex
+    spec:
+      containers:
+        - name: nodejs-ex
+          image: image-registry.openshift-image-registry.svc:5000/devsecops-demo/nodejs-ex:5506d732f447c7c48dc89619af3b8ee8f125cf90
+          ports:
+            - containerPort: 8080

@@ -1,0 +1,150 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-scan-deploy
+  namespace: devsecops-demo
+spec:
+  params:
+    - name: git-url
+      type: string
+      default: "https://github.com/sclorg/nodejs-ex.git"
+    - name: git-revision
+      type: string
+      default: "master"
+    - name: image-repo
+      type: string
+      default: "image-registry.openshift-image-registry.svc:5000/devsecops-demo/nodejs-ex"
+    - name: deployment-name
+      type: string
+      default: "nodejs-ex"
+  workspaces:
+    - name: shared-workspace
+  tasks:
+    - name: fetch-source
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: deleteExisting
+          value: "true"
+
+    - name: scan-source
+      taskRef:
+        name: trivy-scanner
+      runAfter:
+        - fetch-source
+      workspaces:
+        - name: manifest-dir
+          workspace: shared-workspace
+      params:
+        - name: IMAGE_PATH
+          value: "$(workspaces.manifest-dir.path)"
+        - name: ARGS
+          value:
+            - "fs"
+            - "--exit-code"
+            - "1"
+            - "--severity"
+            - "CRITICAL"
+
+    - name: prepare-dockerfile
+      runAfter:
+        - scan-source
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      taskSpec:
+        workspaces:
+          - name: source
+        steps:
+          - name: write-dockerfile
+            image: registry.access.redhat.com/ubi9/ubi-minimal
+            script: |
+              #!/usr/bin/env bash
+              set -eu
+              cat > $(workspaces.source.path)/Dockerfile <<'DOCKERFILE'
+              FROM registry.access.redhat.com/ubi9/nodejs-20:latest
+              WORKDIR /opt/app-root/src
+              COPY --chown=1001:0 . .
+              RUN npm install --omit=dev
+              EXPOSE 8080
+              CMD ["npm", "start"]
+              DOCKERFILE
+              echo "Dockerfile written:"
+              cat $(workspaces.source.path)/Dockerfile
+
+    - name: build-image
+      taskRef:
+        name: buildah
+      runAfter:
+        - prepare-dockerfile
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: IMAGE
+          value: "$(params.image-repo):$(tasks.fetch-source.results.commit)"
+        - name: TLSVERIFY
+          value: "false"
+        - name: STORAGE_DRIVER
+          value: "vfs"
+
+    - name: deploy
+      runAfter:
+        - build-image
+      params:
+        - name: image-ref
+          value: "$(params.image-repo):$(tasks.fetch-source.results.commit)"
+        - name: deployment-name
+          value: "$(params.deployment-name)"
+      taskSpec:
+        params:
+          - name: image-ref
+          - name: deployment-name
+        steps:
+          - name: apply
+            image: registry.redhat.io/openshift4/ose-cli:latest
+            script: |
+              #!/usr/bin/env bash
+              set -eu
+              cat <<EOF | oc apply -f -
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: $(params.deployment-name)
+                labels:
+                  app: $(params.deployment-name)
+              spec:
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app: $(params.deployment-name)
+                template:
+                  metadata:
+                    labels:
+                      app: $(params.deployment-name)
+                  spec:
+                    containers:
+                      - name: $(params.deployment-name)
+                        image: $(params.image-ref)
+                        ports:
+                          - containerPort: 8080
+              ---
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: $(params.deployment-name)
+              spec:
+                selector:
+                  app: $(params.deployment-name)
+                ports:
+                  - port: 8080
+                    targetPort: 8080
+              EOF
+              oc rollout status deployment/$(params.deployment-name) --timeout=180s

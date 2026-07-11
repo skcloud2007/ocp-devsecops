@@ -1,0 +1,19 @@
+# ==============================================================
+# Accepted-risk register — devsecops-demo pipeline
+# Reviewed: 2026-07-11  |  Re-review by: 2026-10-11 (90 days)
+# Owner: <your-name>
+# Context: transitive deps of sample app sclorg/nodejs-ex.
+# All 6 are ReDoS/DoS (HIGH), no known exploit in our usage
+# (internal demo, not internet-facing). Tracked for upgrade.
+# ==============================================================
+
+# body-parser <1.20.3 — DoS via crafted request
+CVE-2024-45590
+
+# path-to-regexp — ReDoS via backtracking (3 related CVEs)
+CVE-2024-45296
+CVE-2024-52798
+CVE-2026-4867
+
+# semver <7.5.2 — ReDoS in range parsing
+CVE-2022-25883

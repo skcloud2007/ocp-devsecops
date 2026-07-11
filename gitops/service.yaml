@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-ex
+  labels:
+    app: nodejs-ex
+spec:
+  selector:
+    app: nodejs-ex
+  ports:
+    - port: 8080
+      targetPort: 8080
