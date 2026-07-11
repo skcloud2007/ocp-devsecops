@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/\skcloud2007/ocp-devsecops.git
+    repoURL: https://github.com/skcloud2007/ocp-devsecops.git
     targetRevision: main
     path: gitops
   destination:
